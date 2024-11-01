@@ -1,0 +1,43 @@
+app:
+  debug: true
+  host: "127.0.0.1"
+  port: 5000
+  tmp_dir: "tmp"
+
+chrome:
+  debug_port: 9222
+  user_data_dir: "chrome_profile"
+  options:
+    remote_debugging_port: 9222
+    start_maximized: true
+    no_sandbox: true
+    disable_dev_shm_usage: true
+    profile_directory: "Default"
+
+logging:
+  level: "INFO"
+  colors:
+    DEBUG: "cyan"
+    INFO: "green"
+    WARNING: "yellow"
+    ERROR: "red"
+    CRITICAL: "red,bg_white"
+  ignored_loggers:
+    websockets: "WARNING"
+    openai: "WARNING"
+    uvicorn: "INFO"
+    uvicorn.access: "INFO"
+    selenium: "INFO"
+    PIL: "INFO"
+    httpcore: "INFO"
+
+llm:
+  #model: chagpt: chatgpt-4o-latest gpt-4o-mini;  qwen: qwen-plus-latest qwen-plus-0919; qwen_local: Qwen/Qwen2.5-7B-Instruct  Qwen/Qwen2.5-14B-Instruct-AWQ
+  model: "qwen-plus-0919" 
+  openai_custom_key_envname: "DASHSCOPE_API_KEY"  #"OPENAI_API_KEY", "DASHSCOPE_API_KEY"
+  openai_custom_key_envname_mm: "DASHSCOPE_API_KEY"  #"OPENAI_API_KEY", "DASHSCOPE_API_KEY"
+  # "https://api.openai.com/v1" "https://dashscope.aliyuncs.com/compatible-mode/v1" 
+  openai_custom_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  openai_custom_mm_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  # qwen-vl-plus-0809 qwen-vl-max-0809 Qwen/Qwen2-VL-2B-Instruct-AWQ
+  openai_custom_mm_model: "Qwen/Qwen2-VL-2B-Instruct-AWQ" 

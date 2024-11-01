@@ -1,0 +1,22 @@
+# Web框架和异步支持
+fastapi>=0.109.0
+uvicorn>=0.27.0
+jinja2>=3.1.0
+python-multipart>=0.0.6
+websockets>=12.0
+
+# Selenium相关
+selenium>=4.16.0
+webdriver-manager>=4.0.0
+
+# 进程管理
+psutil>=5.9.0
+
+# 图像处理
+Pillow>=10.2.0
+
+# HTTP客户端
+httpx>=0.26.0  # 异步HTTP客户端，替代requests
+
+# 环境变量管理
+python-dotenv>=1.0.0 

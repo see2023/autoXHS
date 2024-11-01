@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<title>小红书搜索助手</title>
+	<style>
+		body {
+			margin: 0;
+			padding: 20px;
+			font-family: Arial, sans-serif;
+		}
+
+		.container {
+			display: flex;
+			flex-direction: column;
+			max-width: 800px;
+			margin: 0 auto;
+			height: 100vh;
+			padding: 20px;
+			box-sizing: border-box;
+		}
+
+		.chat-container {
+			flex-grow: 1;
+			background: #f5f5f5;
+			border-radius: 10px;
+			padding: 20px;
+			display: flex;
+			flex-direction: column;
+			margin-bottom: 20px;
+			overflow: hidden;
+		}
+
+		.chat-history {
+			flex-grow: 1;
+			overflow-y: auto;
+			padding: 10px;
+			background: white;
+			border-radius: 5px;
+			box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+		}
+
+		.controls-bottom {
+			display: flex;
+			gap: 6px;
+			padding: 15px;
+			background: #f8f9fa;
+			border-radius: 12px;
+			position: sticky;
+			bottom: 0;
+			box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+		}
+
+		.controls-bottom button {
+			padding: 10px 12px;
+			background: #1a73e8;
+			color: white;
+			border: none;
+			border-radius: 8px;
+			cursor: pointer;
+			font-size: 13px;
+			font-weight: 500;
+			transition: all 0.2s ease;
+			white-space: nowrap;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			min-width: 60px;
+			flex-shrink: 0;
+		}
+
+		.controls-bottom button:hover {
+			background: #1557b0;
+			transform: translateY(-1px);
+			box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+		}
+
+		.controls-bottom button:active {
+			transform: translateY(0);
+			background: #104d92;
+		}
+
+		.search-results-grid {
+			display: grid;
+			grid-template-columns: repeat(3, 1fr);
+			gap: 10px;
+		}
+
+		.result-item {
+			margin-bottom: 10px;
+			padding: 10px;
+			background: #f8f9fa;
+			border-radius: 5px;
+			border-left: 4px solid #1a73e8;
+		}
+
+		.message {
+			margin-bottom: 15px;
+			padding: 10px;
+			border-radius: 5px;
+		}
+
+		.user-message {
+			background: #e3f2fd;
+			margin-left: 20px;
+		}
+
+		.ai-message {
+			background: #f5f5f5;
+			margin-right: 20px;
+		}
+
+		.controls {
+			margin-bottom: 20px;
+			display: flex;
+			flex-direction: column;
+			gap: 15px;
+		}
+
+		.controls-row {
+			display: flex;
+			gap: 10px;
+			align-items: center;
+		}
+
+		.controls button {
+			padding: 8px 16px;
+			background: #1a73e8;
+			color: white;
+			border: none;
+			border-radius: 5px;
+			cursor: pointer;
+			white-space: nowrap;
+		}
+
+		.search-input {
+			flex: 4;
+			padding: 12px;
+			border: 1px solid #e0e0e0;
+			border-radius: 8px;
+			min-width: 200px;
+			resize: none;
+			min-height: 42px;
+			max-height: 150px;
+			overflow-y: auto;
+			font-size: 14px;
+			transition: border-color 0.2s ease;
+			box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+		}
+
+		.search-input:focus {
+			outline: none;
+			border-color: #1a73e8;
+			box-shadow: 0 1px 3px rgba(26, 115, 232, 0.1);
+		}
+
+		#screenshotArea {
+			background: white;
+			padding: 20px;
+			border-radius: 10px;
+			box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+			margin-top: 20px;
+		}
+
+		#screenshot {
+			max-width: 100%;
+			height: auto;
+			display: block;
+			margin: 0 auto;
+		}
+
+		#ocrText pre {
+			white-space: pre-wrap;
+			word-wrap: break-word;
+			background: #f8f9fa;
+			padding: 15px;
+			border-radius: 5px;
+			max-height: 400px;
+			overflow-y: auto;
+			font-family: Arial, sans-serif;
+			margin: 0;
+		}
+
+		.ai-message button {
+			padding: 8px 16px;
+			background: #1a73e8;
+			color: white;
+			border: none;
+			border-radius: 5px;
+			cursor: pointer;
+			font-size: 14px;
+		}
+
+		.ai-message button:hover {
+			background: #1557b0;
+		}
+
+		.active-tasks {
+			margin-bottom: 20px;
+			max-height: 200px;
+			overflow-y: auto;
+		}
+
+		.task-card {
+			background: #fff;
+			border-radius: 8px;
+			padding: 12px;
+			margin-bottom: 10px;
+			box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+		}
+
+		.task-info {
+			flex: 1;
+		}
+
+		.task-progress {
+			height: 4px;
+			background: #e0e0e0;
+			border-radius: 2px;
+			margin: 8px 0;
+		}
+
+		.task-progress-bar {
+			height: 100%;
+			background: #1a73e8;
+			border-radius: 2px;
+			transition: width 0.3s ease;
+		}
+
+		.task-actions button {
+			margin-left: 8px;
+		}
+
+		.control-button {
+			padding: 10px 12px;
+			background: #1a73e8;
+			color: white;
+			border: none;
+			border-radius: 8px;
+			cursor: pointer;
+			font-size: 13px;
+			font-weight: 500;
+			transition: all 0.2s ease;
+			white-space: nowrap;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			min-width: 60px;
+		}
+
+		.control-button:hover {
+			background: #1557b0;
+			transform: translateY(-1px);
+			box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+		}
+
+		.control-button:active {
+			transform: translateY(0);
+			background: #104d92;
+		}
+
+		.task-card .task-actions button {
+			margin-left: 8px;
+		}
+	</style>
+</head>
+
+<body>
+	<div class="container">
+		<div class="chat-container">
+			<div class="chat-history" id="chatHistory">
+				<!-- 对话历史将在这里动态添加 -->
+			</div>
+		</div>
+
+		<div class="controls-bottom">
+			<textarea id="userInput" class="search-input" placeholder="输入搜索词或问题..."></textarea>
+			<button onclick="handleInput()">发送</button>
+			<button onclick="searchXiaohongshu()">搜索</button>
+			<button onclick="openXiaohongshu()">小红书</button>
+			<button onclick="testBrowser()">OCR</button>
+		</div>
+
+		<div class="active-tasks" id="activeTasks">
+			<!-- 活动任务将在这里显示 -->
+		</div>
+	</div>
+
+	<script>
+		let ws;
+		let clientId = Date.now().toString();  // Simple client ID generation
+
+		function connectWebSocket() {
+			console.log('Attempting to connect WebSocket...');
+			ws = new WebSocket(`ws://${window.location.host}/ws/${clientId}`);
+
+			ws.onopen = function () {
+				console.log('WebSocket connection opened, client_id:', clientId);
+			};
+
+			ws.onmessage = function (event) {
+				console.log('WebSocket message received:', event.data);
+				try {
+					const data = JSON.parse(event.data);
+					console.log('Parsed message data:', data);
+
+					if (data.type === 'chat_response') {
+						appendToLastAiMessage(data.content);
+					} else if (data.type === 'search_intent') {
+						handleSearchIntent(data.keywords, data.task_id);
+					} else if (data.type === 'search_task_update') {
+						updateTaskUI(data.task);
+					}
+				} catch (error) {
+					console.error('Error parsing WebSocket message:', error);
+				}
+			};
+
+			ws.onclose = function (event) {
+				console.log('WebSocket connection closed:', event);
+				setTimeout(connectWebSocket, 1000);
+			};
+
+			ws.onerror = function (error) {
+				console.error('WebSocket error:', error);
+			};
+		}
+
+		function appendToLastAiMessage(content) {
+			const chatHistory = document.getElementById('chatHistory');
+			let lastAiMessage = chatHistory.querySelector('.ai-message:last-child');
+
+			if (!lastAiMessage) {
+				lastAiMessage = document.createElement('div');
+				lastAiMessage.className = 'message ai-message';
+				chatHistory.appendChild(lastAiMessage);
+			}
+
+			const contentDiv = lastAiMessage.querySelector('.message-content') ||
+				document.createElement('div');
+			if (!contentDiv.className) {
+				contentDiv.className = 'message-content';
+				lastAiMessage.appendChild(contentDiv);
+			}
+
+			contentDiv.innerHTML += content.replace(/\n/g, '<br>');
+			chatHistory.scrollTop = chatHistory.scrollHeight;
+		}
+
+		function log(message, data) {
+			console.log(`[Debug] ${message}`, data);
+		}
+
+		function addMessage(type, content, isHTML = false) {
+			log('Adding message:', { type, content, isHTML });
+
+			const chatHistory = document.getElementById('chatHistory');
+			const messageDiv = document.createElement('div');
+			messageDiv.className = `message ${type}-message`;
+
+			let contentDiv = document.createElement('div');
+			contentDiv.className = 'message-content';
+
+			if (typeof content === 'object') {
+				log('Processing object content:', content);
+				// 处理包含图片的消息
+				if (content.text) {
+					const textDiv = document.createElement('div');
+					textDiv.innerHTML = content.text.replace(/\n/g, '<br>');
+					contentDiv.appendChild(textDiv);
+				}
+				if (content.html) {
+					contentDiv.innerHTML += content.html;
+				}
+				if (content.image) {
+					log('Adding image to message');
+					const img = document.createElement('img');
+					img.src = `data:image/jpeg;base64,${content.image}`;
+					contentDiv.appendChild(img);
+				}
+			} else if (isHTML) {
+				contentDiv.innerHTML = content;
+			} else {
+				contentDiv.innerHTML = content.replace(/\n/g, '<br>');
+			}
+
+			messageDiv.appendChild(contentDiv);
+			chatHistory.appendChild(messageDiv);
+			chatHistory.scrollTop = chatHistory.scrollHeight;
+		}
+
+		function updateResults(results) {
+			const resultsHTML = `
+				<div class="search-results-grid">
+					${results.map(result => `
+						<div class="result-item" data-id="${result.id}" data-xsec-token="${result.xsec_token}">
+							<h3 style="cursor: pointer;" onclick="openNote('${result.id}', '${result.xsec_token}')">${result.title}</h3>
+							<p>${result.nickname}</p>
+							<div class="result-meta">
+								<span>点赞: ${result.liked_count}</span>
+							</div>
+						</div>
+					`).join('')}
+				</div>
+			`;
+			addMessage('ai', resultsHTML, true);
+		}
+
+		function handleInput() {
+			const input = document.getElementById('userInput');
+			const text = input.value.trim();
+
+			if (!text) return;
+
+			addMessage('user', text);
+			input.value = '';
+
+			if (text.startsWith('搜索:') || text.startsWith('search:')) {
+				const keyword = text.substring(text.indexOf(':') + 1).trim();
+				searchXiaohongshu(keyword);
+			} else {
+				sendMessage(text);
+			}
+		}
+
+		function sendMessage(message) {
+			console.log('Sending message:', message, 'client_id:', clientId);
+			fetch('/ai/chat', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					message: message,
+					client_id: clientId
+				})
+			})
+				.then(response => response.json())
+				.then(data => {
+					console.log('Received response:', data);
+					if (data.status === 'error') {
+						addMessage('ai', 'Error: ' + data.message);
+					}
+				})
+				.catch(error => {
+					console.error('Error sending message:', error);
+					addMessage('ai', '发送消息失败: ' + error);
+				});
+		}
+
+		function searchXiaohongshu() {
+			const input = document.getElementById('userInput');
+			const keyword = input.value.trim();
+
+			log('Searching with keyword:', keyword);
+
+			if (!keyword) {
+				addMessage('ai', '请输入搜索关键词');
+				return;
+			}
+
+			addMessage('user', '搜索: ' + keyword);
+
+			fetch(`/search_xiaohongshu?keyword=${encodeURIComponent(keyword)}`)
+				.then(response => response.json())
+				.then(data => {
+					log('Search response:', data);
+					if (data.status === 'success') {
+						updateResults(data.results);
+					} else {
+						addMessage('ai', '搜索失败：' + (data.message || '未知错误'));
+					}
+				})
+				.catch(error => {
+					log('Search error:', error);
+					addMessage('ai', '搜索出错：' + error);
+				});
+
+			input.value = '';
+		}
+
+		function openXiaohongshu() {
+			addMessage('user', '打开小红书');
+			fetch('/open_xiaohongshu')
+				.then(response => response.json())
+				.then(data => {
+					addMessage('ai', data.message);
+				})
+				.catch(error => {
+					addMessage('ai', '打开小红书失败: ' + error);
+				});
+		}
+
+		function startNewSearch() {
+			document.getElementById('searchResults').innerHTML = '';
+			addMessage('ai', '请输入你想搜索的内容...');
+		}
+
+		function testBrowser() {
+			log('Testing browser...');
+			addMessage('user', '测试浏览器');
+
+			fetch('/test_browser')
+				.then(response => response.json())
+				.then(data => {
+					log('Test browser response:', data);
+					if (data.status === 'success') {
+						// 分开显示OCR文本和截图
+						let content = {
+							text: '识别文本：' + (data.ocr_text || '无文本'),
+							image: data.image
+						};
+						addMessage('ai', content);
+					} else {
+						addMessage('ai', '测试浏览器失败：' + (data.message || '未知错误'));
+					}
+				})
+				.catch(error => {
+					log('Test browser error:', error);
+					addMessage('ai', '测试浏览器失败: ' + error);
+				});
+		}
+
+		function openNote(id, xsecToken) {
+			fetch(`/open_note?id=${encodeURIComponent(id)}&xsec_token=${encodeURIComponent(xsecToken)}`)
+				.then(response => response.json())
+				.then(data => {
+					if (data.status !== 'success') {
+						console.error('Failed to open note:', data.message);
+					}
+				})
+				.catch(error => console.error('Error opening note:', error));
+		}
+
+		function handleSearchIntent(keywords, taskId) {
+			const confirmDiv = document.createElement('div');
+			confirmDiv.className = 'message ai-message';
+			confirmDiv.innerHTML = `
+				<div class="message-content">
+					看起来您想搜索关于「${keywords}」的信息。
+					<div style="margin-top: 10px;">
+						<button onclick="startAutoSearch('${keywords}', '${taskId}')" 
+								style="margin-right: 10px;">
+							开始智能搜索
+						</button>
+						<button onclick="cancelAutoSearch('${taskId}')">
+							取消
+						</button>
+					</div>
+				</div>
+			`;
+			document.getElementById('chatHistory').appendChild(confirmDiv);
+			scrollToBottom();
+		}
+
+		function startAutoSearch(keywords, taskId) {
+			const normalizedKeywords = keywords.trim();
+			console.log('Starting search for keywords:', normalizedKeywords, 'taskId:', taskId);
+
+			fetch('/ai/start_auto_search', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					keywords: normalizedKeywords,
+					client_id: clientId,
+					task_id: taskId
+				})
+			})
+				.then(response => response.json())
+				.then(data => {
+					console.log('Start auto search response:', data);
+					if (data.status === 'success') {
+						addMessage('ai', '已开始智能搜索任务，我会持续为您分析相关信息...');
+					} else {
+						addMessage('ai', data.message || '启动搜索任务失败');
+					}
+				})
+				.catch(error => {
+					console.error('Start auto search error:', error);
+					addMessage('ai', '启动搜索任务出错：' + error);
+				});
+		}
+
+		function cancelAutoSearch(taskId) {
+			fetch('/ai/cancel_auto_search', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					task_id: taskId,
+					client_id: clientId
+				})
+			})
+				.then(response => response.json())
+				.then(data => {
+					console.log('Cancel auto search response:', data);
+					if (data.status === 'error') {
+						addMessage('ai', '取消任务失败：' + data.message);
+					} else {
+						const taskElement = document.getElementById(`task-${taskId}`);
+						if (taskElement) {
+							taskElement.remove();
+						}
+						addMessage('ai', '已取消任务');
+					}
+				})
+				.catch(error => {
+					console.error('Cancel auto search error:', error);
+					addMessage('ai', '取消任务出错：' + error);
+				});
+		}
+
+		function scrollToBottom() {
+			const chatHistory = document.getElementById('chatHistory');
+			chatHistory.scrollTop = chatHistory.scrollHeight;
+		}
+
+		function updateTaskUI(task) {
+			const tasksContainer = document.getElementById('activeTasks');
+			let taskElement = document.getElementById(`task-${task.task_id}`);
+
+			if (!taskElement) {
+				taskElement = document.createElement('div');
+				taskElement.id = `task-${task.task_id}`;
+				taskElement.className = 'task-card';
+				tasksContainer.appendChild(taskElement);
+			}
+
+			// 更新任务状态
+			taskElement.innerHTML = `
+				<div class="task-info">
+					<div>搜索：${task.keywords}</div>
+					<div class="task-progress">
+						<div class="task-progress-bar" style="width: ${task.progress}%"></div>
+					</div>
+					<div>状态：${task.status}</div>
+				</div>
+				<div class="task-actions">
+					${task.status === 'running' ?
+					`<button class="control-button" onclick="cancelAutoSearch('${task.task_id}')">取消</button>` :
+					''
+				}
+				</div>
+			`;
+
+			if (task.status !== 'running') {
+				setTimeout(() => {
+					taskElement.remove();
+				}, 5000);
+			}
+		}
+
+		async function loadExistingTasks() {
+			try {
+				const response = await fetch(`/ai/search_tasks/${clientId}`);
+				const data = await response.json();
+				if (data.status === 'success') {
+					data.tasks.forEach(task => updateTaskUI(task));
+				}
+			} catch (error) {
+				console.error('Error loading existing tasks:', error);
+			}
+		}
+
+		document.getElementById('userInput').addEventListener('keypress', function (e) {
+			if (e.key === 'Enter' && !e.shiftKey) {
+				e.preventDefault();
+				handleInput();
+			}
+		});
+
+		// Connect WebSocket when page loads
+		connectWebSocket();
+
+		// 页面加载时获取现有任务
+		loadExistingTasks();
+	</script>
+</body>
+
+</html>
+
+</html>
