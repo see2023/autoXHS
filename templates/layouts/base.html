@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<title>{% block title %}小红书搜索助手{% endblock %}</title>
+	<link rel="stylesheet" href="/static/css/main.css">
+	<link rel="stylesheet" href="/static/css/chat.css">
+	<link rel="stylesheet" href="/static/css/task.css">
+	{% block styles %}{% endblock %}
+</head>
+
+<body>
+	{% block content %}{% endblock %}
+
+	<!-- 基础库 -->
+	<script src="/static/lib/echarts/echarts.min.js"></script>
+	<script src="/static/lib/marked.min.js"></script>
+	<script src="/static/js/app.js"></script>
+	<script src="/static/js/websocket.js"></script>
+	<script src="/static/js/chat.js"></script>
+	<script src="/static/js/task.js"></script>
+	<script src="/static/js/visualization.js"></script>
+	{% block scripts %}{% endblock %}
+</body>
+
+</html>

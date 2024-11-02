@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, Query, WebSocket
+from fastapi import APIRouter, Request, Query, WebSocket, Body
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from services.browser_service import BrowserService
@@ -66,10 +66,13 @@ async def search_xiaohongshu(keyword: str):
             'message': str(e)
         }
 
-@router.get("/open_note")
-async def open_note(id: str = Query(...), xsec_token: str = Query(...)):
+@router.post("/open_note")
+async def open_note(
+    note_id: str = Body(...),
+    xsec_token: str = Body(...)
+):
     try:
-        result = await browser_service.open_note(id, xsec_token)
+        result = await browser_service.open_note(note_id, xsec_token)
         return result
     except Exception as e:
         logger.error(f"Error opening note: {e}")

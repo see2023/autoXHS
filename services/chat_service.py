@@ -159,7 +159,7 @@ class ChatService:
             
             try:
                 logger.debug("start analyze search intent")
-                response = await self.ai_service.generate_response(messages)
+                response = await self.ai_service.generate_response(messages, model=config.llm.get('model'))
                 result = extract_json_from_text(response)
                 if result and result.get("is_search") and result.get("keywords"):
                     # 处理关键词：分割、去重、限制数量

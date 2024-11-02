@@ -6,6 +6,9 @@ from services.browser_service import BrowserService
 from services.ai_service import AIService
 from models.ai_models import Message, MessageRole
 from config.config_manager import config
+import json
+import re
+from tools.json_tools import extract_json_from_text
 
 logger = logging.getLogger(__name__)
 
@@ -16,22 +19,22 @@ class TaskExecutor:
         self.browser_service = browser_service
         self.ai_service = ai_service  # 文本模型服务
         self.ai_service_mm = ai_service_mm  # 多模态模型服务
+        # 从配置中读取参数
+        self.max_notes_per_batch = config.get('task.max_notes_per_batch', 3)
+        self.max_keywords_per_batch = config.get('task.max_keywords_per_batch', 2)
+        self.max_batches = config.get('task.max_batches', 3)
 
     async def execute_search_task(self, task: SearchTask):
         """执行搜索任务的具体逻辑"""
         try:
             logger.debug(f"Starting search task: {task.task_id}, keywords: {task.keywords}")
             
-            # 从配置中读取参数
-            MAX_NOTES_PER_BATCH = config.get('task.max_notes_per_batch', 5)
-            MAX_KEYWORDS_PER_BATCH = config.get('task.max_keywords_per_batch', 2)  # 改为2个关键词一组
-            
             # 如果是首次执行，生成关键词并保存到context中
             if "all_keywords" not in task.context:
                 # 发送开始搜索的消息
                 await self.task_manager.websocket_service.send_message(task.client_id, {
                     "type": "chat_response",
-                    "content": f"开始搜索「{task.keywords}」相关内容...",
+                    "content": f"开始搜索「{task.keywords}」相内容...",
                     "message_type": "task_progress"
                 })
                 
@@ -41,6 +44,7 @@ class TaskExecutor:
                     raise ValueError("Failed to generate search keywords")
                 
                 # 保存所有关键词到context
+                task.keywords = " ".join(all_keywords)
                 task.context["all_keywords"] = all_keywords
                 task.context["current_batch"] = 0
                 
@@ -56,13 +60,13 @@ class TaskExecutor:
             current_batch = task.context["current_batch"]
             
             # 处理当前批次的关键词，如果剩下最后一个关键词，合并到当前批次
-            batch_start = current_batch * MAX_KEYWORDS_PER_BATCH
+            batch_start = current_batch * self.max_keywords_per_batch
             remaining_keywords = len(all_keywords) - batch_start
-            if remaining_keywords <= MAX_KEYWORDS_PER_BATCH + 1:
+            if remaining_keywords <= self.max_keywords_per_batch + 1:
                 # 如果剩余关键词数量小于等于正常批次大小+1，则一次性处理完
                 batch_keywords = all_keywords[batch_start:]
             else:
-                batch_keywords = all_keywords[batch_start:batch_start + MAX_KEYWORDS_PER_BATCH]
+                batch_keywords = all_keywords[batch_start:batch_start + self.max_keywords_per_batch]
             
             logger.debug(f"Processing batch {current_batch + 1}, keywords: {batch_keywords}")
             
@@ -78,10 +82,17 @@ class TaskExecutor:
             task.progress.comments_total = task.progress.comments_total or 0  # 保留之前的评论总数
             task.progress.comments_processed = task.progress.comments_processed or 0  # 保留之前的处理数
             
+            # 发送更新的任务状态到前端
+            await self.task_manager.websocket_service.send_message(task.client_id, {
+                "type": "search_task_update",
+                "action": "progress",
+                "task": task.to_dict()
+            })
+            
             # 执行搜索
             search_result = await self.browser_service.search_xiaohongshu(combined_keywords)
             if search_result["status"] == "success":
-                notes = search_result["results"][:MAX_NOTES_PER_BATCH]
+                notes = search_result["results"][:self.max_notes_per_batch]
                 task.progress.notes_total += len(notes)
                 await self._process_notes(task, notes, combined_keywords)
             
@@ -101,21 +112,22 @@ class TaskExecutor:
             task.context["current_batch"] = current_batch + 1
             
             # 检查是否还有下一批
-            remaining_keywords = len(all_keywords) - (batch_start + len(batch_keywords))
+            remaining_keywords = task.progress.keywords_total - task.progress.keywords_completed
             if remaining_keywords > 0:
                 logger.debug(f"Batch completed, requesting user input for next batch. Remaining keywords: {remaining_keywords}")
                 await self.task_manager.request_user_input(task.task_id, {
                     "type": "continue_search",
-                    "message": f"已完成第 {current_batch + 1} 批搜索，还有 {remaining_keywords} 个关键词未处理。是否继续搜索？",
+                    "message": f"已完成第 {current_batch + 1} 批搜索，还有 {remaining_keywords} 个关键词未处理: {', '.join(all_keywords[task.progress.keywords_completed:])}。是否继续搜索？",
                     "current_results": len(task.results),
                     "remaining_keywords": remaining_keywords
                 })
                 logger.info(f"User input requested for task {task.task_id}, waiting for response")
                 return  # 等待用户响应
 
-            # 所有批次都完成
+            # 所有批次都完成，进行综合分析
             logger.info(f"Task {task.task_id} completed with {len(task.results)} results")
-            await self._complete_task(task)
+            await self._analyze_all_opinions(task)  # 先进行分析
+            await self._complete_task(task)  # 然后完成任务
 
         except Exception as e:
             logger.error(f"Error in search task: {e}")
@@ -151,47 +163,44 @@ Output example: 遛狗技巧,狗狗训练,遛狗装备,遛狗注意事项"""
             ]
             
             logger.debug(f"starting generate_search_keywords: {task.keywords}")
-            response = await self.ai_service.generate_response(messages)
+            response = await self.ai_service.generate_response(messages, model=config.llm.get('model'))
             if not response:
                 return [task.keywords]
                 
-            # 处理响应，分割关键词并清理
+            # 处理响应，分割关键词并清理，使用 ,; 中文逗号和顿号分割
+            split_chars = ',;，、'
             keywords = []
-            for kw in response.split(','):
-                kw = kw.strip()
+            all_kw = re.split(f'[{split_chars}]', task.keywords) + re.split(f'[{split_chars}]', response)
+            for kw in all_kw:
+                kw = kw.strip(" \n\r\t,.。，、;；")
                 # 过滤无效关键词
                 if (len(kw) > 0 and len(kw) <= 30 and 
-                    '\n' not in kw and '\r' not in kw and 
-                    '.' not in kw and len(keywords) < 5):
+                    '\n' not in kw and '\r' not in kw):
                     keywords.append(kw)
             
-            # 确保原始关键词也包含在内
-            if task.keywords not in keywords:
-                keywords.insert(0, task.keywords)
-            
+            keywords = list(dict.fromkeys(keywords))
             logger.info(f"generated keywords: {keywords}")
-            return keywords[:5]  # 最多返回5个关键词
+            return keywords[:self.max_keywords_per_batch * self.max_batches]
             
         except Exception as e:
-            logger.error(f"Error generating keywords: {e}")
+            logger.warning(f"Error generating keywords: {e}, return original keywords")
             return [task.keywords]  # 出错时返回原始关键词
 
     async def _process_notes(self, task: SearchTask, notes: List[Dict], keyword: str):
         """处理笔记列表"""
         logger.debug(f"Processing {len(notes)} notes for keyword: {keyword}")
+        
+        # 存储当前批次的观点分析结果
+        batch_opinions = []
+        
         for j, note in enumerate(notes, 1):
             if task.state == TaskState.CANCELLED:
                 break
                 
             try:
-                await self._notify_progress(
-                    task, 
-                    f"正在处理笔记 ({j}/{len(notes)}): {note.get('title', '无标题')}"
-                )
                 note_id = note.get("id", "unknown")
                 note_title = note.get("title", "无标题")
                 logger.debug(f"Processing note {j}/{len(notes)}: {note_id} - {note_title}")
-
                 
                 note_detail = await self.browser_service.open_note(
                     note["id"], 
@@ -199,49 +208,122 @@ Output example: 遛狗技巧,狗狗训练,遛狗装备,遛狗注意事项"""
                 )
                 
                 if note_detail["status"] == "success":
-                    comments_count = len(note_detail.get("comments_data", []))
-                    logger.info(f"Note {note_id} - {note_title} processed successfully with {comments_count} comments")
+                    # 更新进度统计
                     task.progress.notes_processed += 1
                     comments = note_detail.get("comments_data", [])
                     task.progress.comments_total += len(comments)
                     task.progress.comments_processed += len(comments)
                     
+                    # 分析观点
+                    opinions = await self._analyze_note_opinions(
+                        note_detail["note_data"],
+                        comments
+                    )
+                    
+                    if opinions:
+                        batch_opinions.append({
+                            "keyword": keyword,
+                            "note_id": note_id,
+                            "note_title": note_title,
+                            "opinions": opinions
+                        })
+                        
+                        # 生成并发送单篇笔记的摘要
+                        note_summary = (
+                            f"### {note_title}\n\n"
+                            f"**主要观点**：{opinions['main_opinion']['content']}\n\n"
+                            f"**可信度**：{opinions['main_opinion']['confidence']}/100\n\n"
+                            f"**支持观点**：\n" + "\n".join([
+                                f"- {op['content']} (点赞：{op['metrics']['likes']})"
+                                for op in opinions['supporting_opinions'][:3]  # 最多显示3个支持观点
+                            ]) + "\n\n"
+                            f"**反对观点**：\n" + "\n".join([
+                                f"- {op['content']} (点赞：{op['metrics']['likes']})"
+                                for op in opinions['opposing_opinions'][:3]  # 最多显示3个反对观点
+                            ])
+                        )
+                        
+                        message_data = {
+                            "type": "chat_response",
+                            "content": {
+                                "summary": note_summary,
+                                "note_id": note_id,
+                                "xsec_token": note.get("xsec_token"),
+                                "title": note_title
+                            },
+                            "message_type": "task_note_summary"
+                        }
+                        
+                        logger.debug(f"Sending note summary message: {message_data}")
+                        await self.task_manager.websocket_service.send_message(task.client_id, message_data)
+                    
+                    # 保存原始数据
                     task.results.append({
                         "keyword": keyword,
                         "note": note,
                         "detail": note_detail["note_data"],
-                        "comments": comments
+                        "comments": comments,
+                        "opinions": opinions
                     })
+                    
+                    logger.info(f"Note {note_id} - {note_title} processed with {len(comments)} comments and opinions analyzed")
                     
             except Exception as e:
                 logger.error(f"Error processing note {note.get('id', 'unknown')}: {e}")
                 continue
+            await self.task_manager.websocket_service.send_message(task.client_id, {
+                "type": "search_task_update",
+                "action": "progress",
+                "task": task.to_dict()
+            })
+        
+        # 批次完成后，对观点进行汇总分析
+        if batch_opinions:
+            summary = await self._summarize_batch_opinions(batch_opinions)
+            await self.task_manager.websocket_service.send_message(task.client_id, {
+                "type": "chat_response",
+                "content": summary,
+                "message_type": "task_progress"
+            })
 
         logger.info(f"Completed processing notes for keyword {keyword}, processed {task.progress.notes_processed} notes")
 
     async def _complete_task(self, task: SearchTask):
-        """完成任务"""
+        """完成任务并生成可视化总结"""
         if task.state == TaskState.RUNNING:
-            summary = (
-                f"搜索完成。共处理 {task.progress.keywords_completed}/{task.progress.keywords_total} 个关键词, "
-                f"获取 {task.progress.notes_processed} 篇笔记, "
-                f"{task.progress.comments_processed} 条评论"
-            )
-            logger.info(f"Task {task.task_id} summary: {summary}")
-            
-            # 发送任务完成消息到对话框
-            await self.task_manager.websocket_service.send_message(task.client_id, {
-                "type": "chat_response",
-                "content": summary
-            })
-            
-            # 更新任务状态
-            await self.task_manager.update_task_state(
-                task.task_id,
-                TaskState.COMPLETED,
-                TaskEvent.COMPLETE,
-                summary
-            )
+            try:
+                # 生成分析总结
+                visualization_data = await self._generate_user_summary(task.context["final_analysis"])
+                
+                # 发送结果到客户端
+                await self.task_manager.websocket_service.send_message(task.client_id, {
+                    "type": "search_result",
+                    "content": {
+                        "basic_stats": {
+                            "keywords_processed": task.progress.keywords_completed,
+                            "total_notes": task.progress.notes_processed,
+                            "total_comments": task.progress.comments_processed
+                        },
+                        "visualization_data": visualization_data
+                    }
+                })
+                
+                # 更新任务状态
+                await self.task_manager.update_task_state(
+                    task.task_id,
+                    TaskState.COMPLETED,
+                    TaskEvent.COMPLETE,
+                    "分析完成"
+                )
+                
+            except Exception as e:
+                logger.error(f"Error generating final summary: {e}")
+                await self.task_manager.update_task_state(
+                    task.task_id,
+                    TaskState.FAILED,
+                    TaskEvent.FAIL,
+                    f"生成总结失败: {str(e)}"
+                )
 
     async def _notify_progress(self, task: SearchTask, message: str):
         """通知任务进度"""
@@ -252,3 +334,301 @@ Output example: 遛狗技巧,狗狗训练,遛狗装备,遛狗注意事项"""
             TaskEvent.PROGRESS,
             message
         )
+
+    async def _analyze_note_opinions(self, note: Dict, comments: List[Dict]) -> Dict:
+        """分析笔记和评论中的观点"""
+        try:
+            # 计算笔记的影响力分数
+            interact_info = note.get("interact_info", {})
+            note_influence = {
+                "liked_count": interact_info.get("liked_count", 0),
+                "collected_count": interact_info.get("collected_count", 0),
+                "comment_count": interact_info.get("comment_count", 0),
+                "share_count": interact_info.get("share_count", 0)
+            }
+            
+            # 构建分析提示
+            note_content = {
+                "title": note.get("title", ""),
+                "desc": note.get("desc", ""),
+                "influence": note_influence
+            }
+            
+            # 处理评论，包含点赞数和时间信息
+            processed_comments = [
+                {
+                    "content": comment.get("content", ""),
+                    "like_count": comment.get("like_count", 0),
+                    "time": comment.get("create_time", ""),  # 如果API提供的话
+                    "sub_comments_count": len(comment.get("sub_comments", []))
+                }
+                for comment in comments
+            ]
+
+            prompt = f"""分析以下小红书笔记及其评论中的观点，考虑内容的影响力:
+
+笔记内容:
+标题: {note_content['title']}
+正文: {note_content['desc']}
+影响力指标:
+- 获赞: {note_influence['liked_count']}
+- 收藏: {note_influence['collected_count']}
+- 评论: {note_influence['comment_count']}
+- 分享: {note_influence['share_count']}
+
+评论数据:
+{json.dumps(processed_comments, ensure_ascii=False, indent=2)}
+
+请提取并分析所有观点，返回JSON格式:
+{{
+    "note_influence_score": "基于获赞、收藏、评论、分享等计算的影响力得分 0-100",
+    "main_opinion": {{
+        "content": "主贴核心观点",
+        "confidence": "基于内容质量和影响力的可信度 0-100",
+        "keywords": ["关键词1", "关键词2"],
+        "support_metrics": {{
+            "likes": "获赞数",
+            "collects": "收藏数",
+            "shares": "分享数",
+            "supporting_comments": "支持性评论数",
+            "opposing_comments": "反对性评论数"
+        }}
+    }},
+    "supporting_opinions": [
+        {{
+            "content": "支持性观点",
+            "source": "主贴/评论",
+            "confidence": "基于点赞数和评论质量的可信度 0-100",
+            "keywords": ["关键词"],
+            "metrics": {{
+                "likes": "获赞数",
+                "sub_comments": "子评论数"
+            }}
+        }}
+    ],
+    "opposing_opinions": [
+        {{
+            "content": "反对性观点",
+            "source": "主贴/评论",
+            "confidence": "基于点赞数和评论质量的可信度 0-100",
+            "keywords": ["关键词"],
+            "metrics": {{
+                "likes": "获赞数",
+                "sub_comments": "子评论数"
+            }}
+        }}
+    ]
+}}"""
+
+            messages = [
+                Message(role=MessageRole.system, content="你是一个专业的观点分析专家，善于从文本中提取观点并分析观点的倾向性。"),
+                Message(role=MessageRole.user, content=prompt)
+            ]
+            
+            response = await self.ai_service.generate_response(messages, model=config.llm.get('model'))
+            # 使用 extract_json_from_text 处理 AI 返回的文本
+            analysis_result = extract_json_from_text(response)
+            if not analysis_result:
+                logger.warning(f"Failed to extract JSON from AI response: {response}")
+                return None
+            
+            # 添加笔记的元信息
+            analysis_result["note_metadata"] = {
+                "id": note.get("id"),
+                "title": note_content["title"],
+                "influence": note_influence,
+                "create_time": note.get("create_time")
+            }
+            
+            logger.info(f"Opinion analysis completed for note {note_content['title']} with influence score {analysis_result.get('note_influence_score')}")
+            return analysis_result
+            
+        except Exception as e:
+            logger.error(f"Error analyzing opinions: {e}")
+            return None
+
+    async def _summarize_batch_opinions(self, batch_opinions: List[Dict]) -> str:
+        """汇总分析一批笔记的观点"""
+        try:
+            prompt = f"""分析以下笔记中的观点汇总:
+
+{json.dumps(batch_opinions, ensure_ascii=False, indent=2)}
+
+请总结以下内容:
+1. 主流观点有哪些（按可信度排序）
+2. 存在哪些争议点
+3. 各种观点的支持度如何
+4. 是否存在明显的误导性信息
+
+返回格式化的文本总结。"""
+
+            messages = [
+                Message(role=MessageRole.system, content="你是一个专业的观点分析专家，善于归纳总结和分析观点倾向。"),
+                Message(role=MessageRole.user, content=prompt)
+            ]
+            
+            summary = await self.ai_service.generate_response(messages, model=config.llm.get('model'))
+            return summary
+            
+        except Exception as e:
+            logger.error(f"Error summarizing batch opinions: {e}")
+            return "观点汇总分析失败"
+
+    async def _analyze_all_opinions(self, task: SearchTask):
+        """综合分析所有批次的观点"""
+        try:
+            all_opinions = task.context.get("all_opinions", [])
+            if not all_opinions:
+                return
+                
+            prompt = f"""分析以下所有笔记中的观点，考虑每个笔记的影响力和时间因素:
+
+观点数据:
+{json.dumps(all_opinions, ensure_ascii=False, indent=2)}
+
+请综合分析并返回JSON格式:
+{{
+    "trending_opinions": [
+        {{
+            "content": "主流观点",
+            "confidence": "综合可信度 0-100",
+            "support_level": "支持度 0-100",
+            "influence_score": "影响力得分 0-100",
+            "keywords": ["关键词"],
+            "sources": ["笔记ID列表"],
+            "trend": "上升/稳定/下降"  # 基于时间分析的趋势
+        }}
+    ],
+    "controversial_points": [
+        {{
+            "topic": "争议点",
+            "supporting_view": "支持方观点",
+            "opposing_view": "反对方观点",
+            "support_ratio": "支持比例 0-100",
+            "discussion_heat": "讨论热度 0-100"
+        }}
+    ],
+    "minority_opinions": [
+        {{
+            "content": "少数派观点",
+            "reasoning": "观点依据",
+            "credibility": "可信度评估 0-100"
+        }}
+    ],
+    "time_based_analysis": {{
+        "opinion_shifts": ["观点变化趋势"],
+        "emerging_topics": ["新兴话题"],
+        "fading_topics": ["减弱话题"]
+    }}
+}}"""
+
+            messages = [
+                Message(role=MessageRole.system, content="你是一个专业的观点分析专家，善于归纳总结和分析观点趋势。"),
+                Message(role=MessageRole.user, content=prompt)
+            ]
+            
+            summary = await self.ai_service.generate_response(messages, model=config.llm.get('model'))
+            # 使用 extract_json_from_text 处理 AI 返回的文本
+            analysis_result = extract_json_from_text(summary)
+            if not analysis_result:
+                logger.warning(f"Failed to extract JSON from AI response: {summary}")
+                return "观点综合分析失败"
+            
+            # 保存综合分析结果
+            task.context["final_analysis"] = analysis_result
+            
+            # 生成用户友好的总结
+            user_summary = await self._generate_user_summary(analysis_result)
+            
+            # 发送综合分析结果
+            await self.task_manager.websocket_service.send_message(task.client_id, {
+                "type": "chat_response",
+                "content": user_summary,
+                "message_type": "task_progress"
+            })
+            
+        except Exception as e:
+            logger.error(f"Error in comprehensive opinion analysis: {e}")
+            return "观点综合分析失败"
+
+    async def _generate_user_summary(self, analysis_result: Dict) -> Dict:
+        """生成用户友好的分析总结，包含可视化数据"""
+        try:
+            # 生成文字总结
+            prompt = f"""基于以下分析结果，生成一个用户友好的总结:
+{json.dumps(analysis_result, ensure_ascii=False, indent=2)}
+
+要求：
+1. 使用自然的语言
+2. 突出主要观点和趋势
+3. 说明争议点的不同立场
+4. 指出时间维度的变化
+5. 提供可操作的见解
+"""
+            messages = [
+                Message(role=MessageRole.system, content="你是一个善于将专业分析转化为用户友好内容的AI助手。"),
+                Message(role=MessageRole.user, content=prompt)
+            ]
+            
+            text_summary = await self.ai_service.generate_response(messages, model=config.llm.get('model'))
+            
+            # 构建可视化数据结构
+            visualization_data = {
+                "text_summary": text_summary,
+                "word_cloud": {
+                    "title": "关键词权重分布",
+                    "data": [
+                        # 从所有观点中提取关键词和权重
+                        {"text": keyword, "weight": confidence}
+                        for opinion in analysis_result["trending_opinions"]
+                        for keyword, confidence in zip(opinion["keywords"], [opinion["confidence"]] * len(opinion["keywords"]))
+                    ]
+                },
+                "opinion_distribution": {
+                    "title": "观点分布",
+                    "type": "pie",  # 或 "bar"
+                    "data": [
+                        {
+                            "name": opinion["content"],
+                            "value": opinion["support_level"],
+                            "confidence": opinion["confidence"]
+                        }
+                        for opinion in analysis_result["trending_opinions"]
+                    ]
+                },
+                "controversy_analysis": {
+                    "title": "争议点分析",
+                    "type": "bar",
+                    "data": [
+                        {
+                            "topic": point["topic"],
+                            "support_ratio": point["support_ratio"],
+                            "discussion_heat": point["discussion_heat"],
+                            "supporting_view": point["supporting_view"],
+                            "opposing_view": point["opposing_view"]
+                        }
+                        for point in analysis_result["controversial_points"]
+                    ]
+                },
+                "minority_insights": {
+                    "title": "少数派观点分析",
+                    "type": "bar",
+                    "data": [
+                        {
+                            "content": opinion["content"],
+                            "credibility": opinion["credibility"],
+                            "reasoning": opinion["reasoning"]
+                        }
+                        for opinion in analysis_result["minority_opinions"]
+                    ]
+                }
+            }
+            
+            return visualization_data
+            
+        except Exception as e:
+            logger.error(f"Error generating visualization data: {e}")
+            return {
+                "text_summary": "无法生成分析总结",
+                "error": str(e)
+            }

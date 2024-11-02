@@ -8,7 +8,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# 移除全局的 chat_service 实例
 chat_service = None
 
 @router.on_event("startup")
@@ -42,7 +41,7 @@ async def start_auto_search(task: SearchTask):
         raise HTTPException(status_code=400, detail="keywords is required for starting search")
         
     result = await chat_service.start_auto_search(task.keywords, task.client_id, task.task_id)
-    logger.debug(f"Auto search started with result: {result}")
+    logger.info(f"Auto search started with result: {result}")
     return result
 
 @router.post("/cancel_auto_search")
@@ -53,13 +52,13 @@ async def cancel_auto_search(task: SearchTask):
         raise HTTPException(status_code=400, detail="task_id is required for canceling")
         
     result = await chat_service.cancel_auto_search(task.task_id, task.client_id)
-    logger.debug(f"Auto search canceled with result: {result}")
+    logger.info(f"Auto search canceled with result: {result}")
     return result
 
 @router.get("/search_tasks/{client_id}")
 async def get_search_tasks(client_id: str):
     """获取指定客户端的所有搜索任务"""
-    logger.debug(f"Getting search tasks for client: {client_id}")
+    logger.info(f"Getting search tasks for client: {client_id}")
     return await chat_service.get_search_tasks(client_id)
 
 @router.post("/submit_user_input")
@@ -74,5 +73,5 @@ async def submit_user_input(task_input: dict):
         task_input["client_id"],
         task_input["input"]
     )
-    logger.debug(f"User input submitted with result: {result}")
+    logger.info(f"User input submitted with result: {result}")
     return result

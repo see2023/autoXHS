@@ -1,5 +1,7 @@
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from routers import main_router, ai_router, data_router
 import logging
 import colorlog
@@ -31,6 +33,17 @@ def setup_logging():
 setup_logging()
 
 app = FastAPI()
+
+# 配置静态文件目录
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# 配置模板目录
+templates = Jinja2Templates(directory="templates")
+
+# 主页路由
+@app.get("/")
+async def root(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
 
 # Include routers
 app.include_router(main_router)

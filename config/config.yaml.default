@@ -45,3 +45,4 @@ llm:
 task:
   max_notes_per_batch: 5
   max_keywords_per_batch: 1
+  max_batches: 3

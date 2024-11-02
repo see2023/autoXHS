@@ -1,0 +1,133 @@
+body {
+	margin: 0;
+	padding: 20px;
+	font-family: Arial, sans-serif;
+}
+
+.container {
+	display: flex;
+	gap: 20px;
+	height: 100vh;
+}
+
+.left-panel {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+}
+
+.right-panel {
+	width: 400px;
+	background: #fff;
+	border-radius: 10px;
+	padding: 20px;
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+	display: none;
+	/* 默认隐藏，有结果时显示 */
+}
+
+.visualization-section {
+	margin-bottom: 20px;
+}
+
+.chart-container {
+	width: 100%;
+	height: 300px;
+	margin: 10px 0;
+}
+
+.summary-text {
+	padding: 15px;
+	background: #f8f9fa;
+	border-radius: 8px;
+	margin-bottom: 20px;
+	font-size: 14px;
+	line-height: 1.6;
+}
+
+/* 当有分析结果时显示右侧面板 */
+.has-analysis .right-panel {
+	display: block;
+}
+
+.controls-bottom {
+	display: flex;
+	gap: 6px;
+	padding: 15px;
+	background: #f8f9fa;
+	border-radius: 12px;
+	position: sticky;
+	bottom: 0;
+	box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.control-button {
+	padding: 10px 12px;
+	background: #1a73e8;
+	color: white;
+	border: none;
+	border-radius: 8px;
+	cursor: pointer;
+	font-size: 13px;
+	font-weight: 500;
+	transition: all 0.2s ease;
+	white-space: nowrap;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 60px;
+}
+
+.control-button:hover {
+	background: #1557b0;
+	transform: translateY(-1px);
+	box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.control-button:active {
+	transform: translateY(0);
+	background: #104d92;
+}
+
+.search-input {
+	flex: 4;
+	padding: 12px;
+	border: 1px solid #e0e0e0;
+	border-radius: 8px;
+	min-width: 200px;
+	resize: none;
+	min-height: 42px;
+	max-height: 150px;
+	overflow-y: auto;
+	font-size: 14px;
+	transition: border-color 0.2s ease;
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.search-input:focus {
+	outline: none;
+	border-color: #1a73e8;
+	box-shadow: 0 1px 3px rgba(26, 115, 232, 0.1);
+}
+
+.chat-container {
+	flex-grow: 1;
+	background: #f5f5f5;
+	border-radius: 10px;
+	padding: 20px;
+	display: flex;
+	flex-direction: column;
+	margin-bottom: 20px;
+	overflow: hidden;
+}
+
+.chat-history {
+	flex-grow: 1;
+	overflow-y: auto;
+	padding: 10px;
+	background: white;
+	border-radius: 5px;
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+	min-height: 200px;
+}
