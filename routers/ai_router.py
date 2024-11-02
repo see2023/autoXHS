@@ -7,7 +7,15 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-chat_service = ChatService()
+
+# 移除全局的 chat_service 实例
+chat_service = None
+
+@router.on_event("startup")
+async def startup_event():
+    """启动时初始化 ChatService"""
+    global chat_service
+    chat_service = await ChatService.create()
 
 class ChatMessage(BaseModel):
     message: str
@@ -53,3 +61,18 @@ async def get_search_tasks(client_id: str):
     """获取指定客户端的所有搜索任务"""
     logger.debug(f"Getting search tasks for client: {client_id}")
     return await chat_service.get_search_tasks(client_id)
+
+@router.post("/submit_user_input")
+async def submit_user_input(task_input: dict):
+    """提交用户输入"""
+    logger.debug(f"Submitting user input: {task_input}")
+    if not task_input.get("task_id"):
+        raise HTTPException(status_code=400, detail="task_id is required")
+        
+    result = await chat_service.submit_user_input(
+        task_input["task_id"], 
+        task_input["client_id"],
+        task_input["input"]
+    )
+    logger.debug(f"User input submitted with result: {result}")
+    return result

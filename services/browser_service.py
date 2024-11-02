@@ -22,57 +22,80 @@ from webdriver_manager.core.driver_cache import DriverCacheManager
 logger = logging.getLogger(__name__)
 
 class BrowserService:
+    _instance = None
+    _initialized = False
+    _lock = asyncio.Lock()
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(BrowserService, cls).__new__(cls)
+        return cls._instance
+
     def __init__(self):
-        self.driver = None
-        chrome_config = config.chrome
-        self.debug_port = chrome_config['debug_port']
-        self.user_data_dir = chrome_config['user_data_dir']
+        if not self._initialized:
+            self.driver = None
+            chrome_config = config.chrome
+            self.debug_port = chrome_config['debug_port']
+            self.user_data_dir = chrome_config['user_data_dir']
+            self._initialized = True
+
+    @classmethod
+    async def get_instance(cls):
+        """获取单例实例，确保线程安全"""
+        async with cls._lock:
+            if cls._instance is None:
+                cls._instance = cls()
+            return cls._instance
 
     async def start_browser(self):
         """启动浏览器"""
-        try:
-            logger.info("Starting browser...")
-            
-            os.makedirs(self.user_data_dir, exist_ok=True)
-            
-            # 设置 Chrome 选项
-            chrome_options = Options()
-            chrome_options.add_argument(f'--remote-debugging-port={self.debug_port}')
-            # chrome_options.add_argument('--start-maximized')
-            chrome_options.add_argument('--no-sandbox')
-            chrome_options.add_argument('--disable-dev-shm-usage')
-            chrome_options.add_argument(f'--user-data-dir={self.user_data_dir}')
-            chrome_options.add_argument('--profile-directory=Default')
+        async with self._lock:  # 确保只有一个线程可以启动浏览器
+            try:
+                if self.driver:
+                    logger.info("Browser already started")
+                    return True
 
-            # Add CDP (Chrome DevTools Protocol) logging
-            chrome_options.set_capability(
-                "goog:loggingPrefs", {"performance": "ALL"}
-            )
+                logger.info("Starting browser...")
+                
+                os.makedirs(self.user_data_dir, exist_ok=True)
+                
+                # 设置 Chrome 选项
+                chrome_options = Options()
+                chrome_options.add_argument(f'--remote-debugging-port={self.debug_port}')
+                chrome_options.add_argument('--no-sandbox')
+                chrome_options.add_argument('--disable-dev-shm-usage')
+                chrome_options.add_argument(f'--user-data-dir={self.user_data_dir}')
+                chrome_options.add_argument('--profile-directory=Default')
 
-            cache_manager = DriverCacheManager(valid_range=7)
-            service = Service(
-                ChromeDriverManager(
-                    cache_manager=cache_manager
-                ).install()
-            )
-            
-            self.driver = webdriver.Chrome(
-                service=service,
-                options=chrome_options
-            )
-            
-            logger.info("Browser started successfully")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error starting browser: {e}")
-            if self.driver:
-                try:
-                    self.driver.quit()
-                except:
-                    pass
-                self.driver = None
-            raise
+                # Add CDP logging
+                chrome_options.set_capability(
+                    "goog:loggingPrefs", {"performance": "ALL"}
+                )
+
+                cache_manager = DriverCacheManager(valid_range=7)
+                service = Service(
+                    ChromeDriverManager(
+                        cache_manager=cache_manager
+                    ).install()
+                )
+                
+                self.driver = webdriver.Chrome(
+                    service=service,
+                    options=chrome_options
+                )
+                
+                logger.info("Browser started successfully")
+                return True
+                
+            except Exception as e:
+                logger.error(f"Error starting browser: {e}")
+                if self.driver:
+                    try:
+                        self.driver.quit()
+                    except:
+                        pass
+                    self.driver = None
+                raise
 
     async def open_xiaohongshu(self):
         """打开小红书"""
@@ -158,6 +181,18 @@ class BrowserService:
                 pass
             self.driver = None
 
+    ''' 封装 execute_cdp_cmd 的函数，如果抛出 Message: unknown error: unhandled inspector error: {"code":-32000,"message":"No resource with given identifier found"}
+    的异常，则不打印整个日志
+    '''
+    def execute_cdp_cmd(self, command, params=None):
+        try:
+            return self.driver.execute_cdp_cmd(command, params)
+        except Exception as e:
+            if "No resource with given identifier found" in str(e):
+                logger.info("No resource with given identifier found, ignore")
+                return None
+            raise
+
     async def search_xiaohongshu(self, keyword):
         """搜索小红书内容并捕获接口返回"""
         try:
@@ -207,7 +242,7 @@ class BrowserService:
                         continue
                     
                     if "api/sns/web/v1/search/notes" in resp_url:
-                        response_body = self.driver.execute_cdp_cmd(
+                        response_body = self.execute_cdp_cmd(
                             "Network.getResponseBody", {"requestId": request_id}
                         )
                         
@@ -226,7 +261,7 @@ class BrowserService:
                                             "nickname": note.get("user", {}).get("nickname"),
                                             "liked_count": note.get("interact_info", {}).get("liked_count")
                                         })
-                                logger.info(f'Got {len(search_results)} search results')
+                                logger.info(f'{keyword} got {len(search_results)} search results')
                                 return {
                                     "status": "success",
                                     "results": search_results
@@ -236,7 +271,7 @@ class BrowserService:
                     logger.error(f"Error processing log entry: {e}")
                     continue
             
-            logger.info(f'Got {len(search_results)} search results')
+            logger.info(f'{keyword} got {len(search_results)} search results')
             return {
                 "status": "success",
                 "results": search_results
@@ -340,7 +375,7 @@ class BrowserService:
                         if not request_id:
                             logger.debug("No request id found in feed response")
                             continue
-                        response_body = self.driver.execute_cdp_cmd(
+                        response_body = self.execute_cdp_cmd(
                             "Network.getResponseBody", {"requestId": request_id}
                         )
                         if response_body and "body" in response_body:
@@ -373,7 +408,7 @@ class BrowserService:
                         if not request_id:
                             logger.debug("No request id found in comment response")
                             continue
-                        response_body = self.driver.execute_cdp_cmd(
+                        response_body = self.execute_cdp_cmd(
                             "Network.getResponseBody", {"requestId": request_id}
                         )
                         if response_body and "body" in response_body:

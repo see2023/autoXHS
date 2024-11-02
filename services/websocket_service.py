@@ -1,6 +1,7 @@
 import logging
 from typing import Dict
 from fastapi import WebSocket
+logger = logging.getLogger(__name__)
 
 class WebsocketService:
     _instance = None
@@ -23,11 +24,14 @@ class WebsocketService:
             logging.info(f"Client {client_id} disconnected. Remaining connections: {len(self.active_connections)}")
             
     async def send_message(self, client_id: str, message: dict):
+        """发送消息到指定客户端"""
+        logger.debug(f"Sending message to client {client_id}: {message}")
         if client_id in self.active_connections:
             try:
                 await self.active_connections[client_id].send_json(message)
+                logger.debug(f"Message sent successfully to client {client_id}")
             except Exception as e:
-                logging.error(f"Error sending message to client {client_id}: {e}")
+                logger.error(f"Error sending message to client {client_id}: {e}")
                 self.disconnect(client_id)
         else:
-            logging.warning(f"Client {client_id} not found in active connections")
+            logger.warning(f"Client {client_id} not found in active connections")

@@ -11,6 +11,10 @@ import re
 import uuid
 from datetime import datetime
 from tools.json_tools import extract_json_from_text
+from services.task_manager import TaskManager
+from services.task_executor import TaskExecutor
+from services.browser_service import BrowserService
+from services.task_manager import TaskState, TaskEvent
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +46,29 @@ class ChatService:
         self.max_messages = 10
         self.max_message_length = 2000
         self.websocket_service = WebsocketService()
-        self._analyzing = False  # 添加标志位,防止并发分析
-        self.search_tasks: Dict[str, SearchTaskInfo] = {}  # task_id -> task_info
-        self.client_tasks: Dict[str, List[str]] = {}  # client_id -> [task_id]
+        self._analyzing = False
+        
+        # 初始化任务管理器
+        self.task_manager = TaskManager(self.websocket_service)
+        self.browser_service = None
+        self.task_executor = None
+
+    @classmethod
+    async def create(cls) -> 'ChatService':
+        """异步工厂方法创建 ChatService 实例"""
+        service = cls()
+        await service.setup()
+        return service
+
+    async def setup(self):
+        """异步初始化方法"""
+        self.browser_service = await BrowserService.get_instance()
+        self.task_executor = TaskExecutor(
+            task_manager=self.task_manager,
+            browser_service=self.browser_service,
+            ai_service=self.ai_service,
+            ai_service_mm=self.ai_service_mm
+        )
 
     @staticmethod
     def last_sentence_end(text: str, skip_comma: bool = True, min_length: int = 10) -> int:
@@ -134,6 +158,7 @@ class ChatService:
             ]
             
             try:
+                logger.debug("start analyze search intent")
                 response = await self.ai_service.generate_response(messages)
                 result = extract_json_from_text(response)
                 if result and result.get("is_search") and result.get("keywords"):
@@ -174,7 +199,8 @@ class ChatService:
                         if client_id:
                             await self.websocket_service.send_message(client_id, {
                                 "type": "chat_response",
-                                "content": sentence
+                                "content": sentence,
+                                "message_type": "chat"
                             })
             
             # 发送剩余的不完整句子
@@ -183,7 +209,8 @@ class ChatService:
                 if client_id:
                     await self.websocket_service.send_message(client_id, {
                         "type": "chat_response",
-                        "content": one_sentence
+                        "content": one_sentence,
+                        "message_type": "chat"
                     })
             
             # 更新聊天历史
@@ -202,20 +229,16 @@ class ChatService:
             # 分析完整对话后的搜索意图
             is_search, keywords = await self.analyze_search_intent()
             if is_search and keywords and client_id:
-                task_id = str(uuid.uuid4())
+                # 创建待定状态的任务
+                task_id = self.task_manager.create_pending_task(keywords, client_id)
+                
                 await self.websocket_service.send_message(client_id, {
                     "type": "search_intent",
                     "content": f"看起来您想搜索关于「{keywords}」的信息。要开始智能搜索任务吗？",
                     "keywords": keywords,
                     "task_id": task_id
                 })
-                logger.info(f'create task with keyswords {keywords} and task_id {task_id}')
-                
-                # 预创建任务对象，但状态设为pending
-                task = SearchTaskInfo(keywords, client_id)
-                task.task_id = task_id
-                task.status = "pending"
-                self.search_tasks[task_id] = task
+                logger.info(f'create pending task with keywords {keywords} and task_id {task_id}')
 
         except Exception as e:
             logger.error(f"Error in _handle_stream_response: {e}")
@@ -227,152 +250,79 @@ class ChatService:
 
     async def start_auto_search(self, keywords: str, client_id: str, task_id: str) -> dict:
         """开始自动搜索任务"""
-        # 标准化关键词处理
-        normalized_keywords = keywords.strip()
-
-        # 用task_id检查， 如果不存在，或者状态不是 pending, 则返回
-        if not task_id or task_id not in self.search_tasks:
-            logger.info(f"task id not pending")
+        try:
+            task = await self.task_manager.create_task(keywords, client_id, task_id)
+            
+            # 创建异步任务执行搜索
+            asyncio.create_task(self.task_executor.execute_search_task(task))
+            
             return {
-                "status": "error",
-                "message": "任务ID错误",
-                "task_id": task_id
-            }
-        if self.search_tasks[task_id].status != 'pending':
-            logger.info(f"task id status not pending")
-            return {
-                "status": "error",
-                "message": f"任务状态错误: {self.search_tasks[task_id].status}",
-                "task_id": task_id
-            }
-        
-        # 检查是否存在相同关键词的运行中任务
-        for task in self.search_tasks.values():
-            if (task.client_id == client_id and 
-                task.keywords.strip() == normalized_keywords and 
-                task.status == "running"):
-                logger.info(f"Found duplicate running task for keywords: {normalized_keywords}")
-                return {
-                    "status": "error",
-                    "message": "已经有相同关键词的搜索任务正在运行中",
-                    "task_id": task.task_id  # 返回已存在的任务ID
-                }
-
-        # 创建新任务
-        task = self.search_tasks[task_id]
-        task.status = "running"
-        
-        # 关联到客户端
-        if client_id not in self.client_tasks:
-            self.client_tasks[client_id] = []
-        self.client_tasks[client_id].append(task.task_id)
-
-        # 发送任务开始通知
-        await self.websocket_service.send_message(client_id, {
-            "type": "search_task_update",
-            "action": "start",
-            "task": {
+                "status": "success",
                 "task_id": task.task_id,
-                "keywords": keywords,
-                "status": task.status,
-                "progress": task.progress
+                "message": "搜索任务已启动"
             }
-        })
-
-        # 创建异步任务执行搜索
-        asyncio.create_task(self._execute_search_task(task))
-
-        logger.info(f"Search task started: {task.task_id}, client_id: {client_id}, keywords: {keywords}")
-        return {
-            "status": "success",
-            "task_id": task.task_id,
-            "message": "搜索任务已启动"
-        }
+        except ValueError as e:
+            return {
+                "status": "error",
+                "message": str(e),
+                "task_id": task_id
+            }
+        except Exception as e:
+            logger.error(f"Error starting search task: {e}")
+            return {
+                "status": "error",
+                "message": str(e)
+            }
 
     async def cancel_auto_search(self, task_id: str, client_id: str) -> dict:
         """取消搜索任务"""
-        if task_id not in self.search_tasks:
-            logger.info(f"Search task not found: {task_id}")
-            return {
-                "status": "success",
-                "message": "任务已经删除过了"
-            }
-
-        task = self.search_tasks[task_id]
-        if task.client_id != client_id:
-            logger.info(f"Search task client_id mismatch: {task.client_id} != {client_id}")
-            return {
-                "status": "error",
-                "message": "无权操作此任务"
-            }
-
-        task.status = "cancelled"
-        task.end_time = datetime.now()
-
-        # 发送任务取消通知
-        await self.websocket_service.send_message(client_id, {
-            "type": "search_task_update",
-            "action": "cancel",
-            "task_id": task_id
-        })
-        logger.info(f"Search task canceled: {task_id}, client_id: {client_id}")
-        return {
-            "status": "success",
-            "message": "任务已取消"
-        }
+        return await self.task_manager.cancel_task(task_id, client_id)
 
     async def get_search_tasks(self, client_id: str) -> dict:
         """获取客户端的所有搜索任务"""
-        if client_id not in self.client_tasks:
-            logger.info(f"No search tasks found for client: {client_id}")
-            return {
-                "status": "success",
-                "tasks": []
-            }
-
-        tasks = []
-        for task_id in self.client_tasks[client_id]:
-            task = self.search_tasks[task_id]
-            tasks.append({
-                "task_id": task.task_id,
-                "keywords": task.keywords,
-                "status": task.status,
-                "progress": task.progress,
-                "start_time": task.start_time.isoformat(),
-                "end_time": task.end_time.isoformat() if task.end_time else None,
-                "error": task.error
-            })
-
-        logger.info(f"Search tasks retrieved for client: {client_id}, tasks: {tasks}")
+        tasks = await self.task_manager.get_client_tasks(client_id)
         return {
             "status": "success",
             "tasks": tasks
         }
 
-    async def _execute_search_task(self, task: SearchTaskInfo):
-        """执行搜索任务的具体逻辑"""
+    async def submit_user_input(self, task_id: str, client_id: str, user_input: Dict) -> dict:
+        """处理用户输入并继续任务"""
         try:
-            # TODO: 实现具体的搜索逻辑
-            # 1. 生成关键词组合
-            # 2. 执行搜索
-            # 3. 分析结果
-            # 4. 更新进度
-            pass
-
-        except Exception as e:
-            logger.error(f"Error in search task: {e}")
-            task.status = "error"
-            task.error = str(e)
-        finally:
-            if task.status == "running":
-                task.status = "completed"
-            task.end_time = datetime.now()
+            # 更新任务状态
+            await self.task_manager.receive_user_input(task_id, user_input)
             
-            # 发送任务完成通知
-            await self.websocket_service.send_message(task.client_id, {
-                "type": "search_task_update",
-                "action": "complete",
-                "task_id": task.task_id,
-                "status": task.status,
-                "error": task.error
-            })
+            # 获取任务实例
+            task = self.task_manager.tasks.get(task_id)
+            if not task:
+                return {
+                    "status": "error",
+                    "message": "Task not found"
+                }
+                
+            # 如果用户选择继续搜索，重新启动搜索任务
+            if user_input.get("continue_search"):
+                asyncio.create_task(self.task_executor.execute_search_task(task))
+                return {
+                    "status": "success",
+                    "message": "继续搜索"
+                }
+            else:
+                # 如果用户选择查看结果，将任务标记为完成
+                await self.task_manager.update_task_state(
+                    task_id,
+                    TaskState.COMPLETED,
+                    TaskEvent.COMPLETE,
+                    "用户选择查看结果，搜索结束"
+                )
+                return {
+                    "status": "success",
+                    "message": "搜索结束，准备展示结果"
+                }
+                
+        except Exception as e:
+            logger.error(f"Error submitting user input: {e}")
+            return {
+                "status": "error",
+                "message": str(e)
+            }
