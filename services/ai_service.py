@@ -49,6 +49,11 @@ class AIService:
                 model=model,
                 messages=[message.to_dict() for message in messages],
             )
+            
+            logging.debug(f"Token usage - Input: {response.usage.prompt_tokens}, "
+                         f"Output: {response.usage.completion_tokens}, "
+                         f"Total: {response.usage.total_tokens}")
+            
             return response.choices[0].message.content
         except Exception as e:
             logging.error(f'send message to {self._base_url} error: {e}')
@@ -61,11 +66,23 @@ class AIService:
             response_stream = await self._client.chat.completions.create(
                 model=model,
                 messages=[message.to_dict() for message in messages],
-                stream=True
+                stream=True,
+                # stream_options = {
+                #     "include_usage": True
+                # }
             )
+            # total_prompt_tokens = 0
+            # total_completion_tokens = 0
             async for chunk in response_stream:
+                # if hasattr(chunk, 'usage') and chunk.usage:
+                #     total_prompt_tokens = chunk.usage.prompt_tokens
+                #     total_completion_tokens = chunk.usage.completion_tokens
                 if chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
+
+            # logging.debug(f"Stream response token usage - Input: {total_prompt_tokens}, "
+            #              f"Output: {total_completion_tokens}, "
+            #              f"Total: {total_prompt_tokens + total_completion_tokens}")
         except Exception as e:
             logging.error(f'Stream response error: {e}')
             yield f"Error: {str(e)}"

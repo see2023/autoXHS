@@ -64,8 +64,9 @@ const WebSocket = {
 					break;
 
 				case 'search_result':
-					this.log('Processing search_result');
-					Visualization.handleSearchResult(data.content);
+					this.log('Processing search_result:', data.content);
+					// 交给 Task 处理结果展示
+					Task.handleSearchResult(data.content);
 					break;
 
 				default:

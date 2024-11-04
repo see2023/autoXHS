@@ -96,7 +96,7 @@ const Task = {
 
 			const data = await response.json();
 			if (data.status === 'success') {
-				Chat.addMessage('user', `选择：${continueSearch ? '继续搜索' : '查看结果'}`);
+				// Chat.addMessage('user', `选择：${continueSearch ? '继续搜索' : '查看结果'}`);
 			} else {
 				Chat.addMessage('ai', '提交选择失败：' + data.message);
 			}
@@ -192,6 +192,40 @@ const Task = {
 			setTimeout(() => {
 				taskElement.remove();
 			}, 5000);
+		}
+	},
+
+	// 处理搜索结果
+	handleSearchResult(content) {
+		console.log('Handling search result:', content);
+
+		// 1. 展示文字总结（Markdown格式）
+		const summaryElement = document.getElementById('analysisSummary');
+		if (summaryElement && content.text_summary) {
+			// 使用 marked 处理 Markdown
+			summaryElement.innerHTML = marked.parse(content.text_summary);
+		}
+
+		// 2. 显示基础统计信息
+		if (content.basic_stats) {
+			// 使用 HTML 模板创建统计信息
+			const statsHtml = `
+				<div class="stats-summary">
+					<h4>搜索统计</h4>
+					<ul>
+						<li>处理关键词：${content.basic_stats.keywords_processed} 个</li>
+						<li>分析笔记：${content.basic_stats.total_notes} 篇</li>
+						<li>收集评论：${content.basic_stats.total_comments} 条</li>
+					</ul>
+				</div>
+			`;
+			// 使用 isHtml 参数添加消息
+			Chat.addMessage('ai', statsHtml, true);
+		}
+
+		// 3. 调用 Visualization 处理可视化数据
+		if (content.visualization_data) {
+			Visualization.handleSearchResult(content.visualization_data);
 		}
 	}
 }; 

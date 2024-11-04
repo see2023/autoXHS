@@ -80,3 +80,131 @@
 .task-actions button {
 	margin-left: 8px;
 }
+
+.stats-summary {
+	background: #f5f5f5;
+	padding: 12px;
+	border-radius: 8px;
+	margin: 8px 0;
+}
+
+.stats-summary h4 {
+	margin: 0 0 10px 0;
+	color: #333;
+}
+
+.stats-summary ul {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+}
+
+.stats-summary li {
+	margin: 5px 0;
+	color: #666;
+}
+
+#analysisSummary {
+	padding: 15px;
+	background: white;
+	border-radius: 8px;
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+	margin-bottom: 15px;
+}
+
+.chart-container {
+	width: 100% !important;
+	height: 300px !important;
+	margin: 15px 0;
+	background: white;
+	border-radius: 8px;
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* 右侧面板样式 */
+.right-panel {
+	flex: 0;
+	padding: 12px;
+	background: #fff;
+	border-radius: 8px;
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+	margin-left: 8px;
+	overflow-y: auto;
+	height: 100vh;
+	display: block !important;
+	transition: flex 0.3s ease;
+	position: relative;
+}
+
+.right-panel.expanded {
+	flex: 1;
+}
+
+/* 切换按钮样式 */
+.toggle-panel-btn {
+	position: absolute;
+	left: 0px;
+	top: 50%;
+	transform: translateY(-50%);
+	width: 30px;
+	height: 30px;
+	border-radius: 50%;
+	background: #1a73e8;
+	color: white;
+	border: none;
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+	z-index: 9999;
+	font-size: 14px;
+	padding: 0;
+}
+
+.toggle-panel-btn:hover {
+	background: #1557b0;
+}
+
+/* 当面板收起时，隐藏内容但保持按钮可见 */
+.right-panel:not(.expanded) .visualization-section {
+	display: none;
+}
+
+.visualization-section {
+	margin-bottom: 20px;
+	background: white;
+	border-radius: 8px;
+	padding: 12px;
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.visualization-section h3 {
+	margin: 0 0 15px 0;
+	color: #333;
+	font-size: 18px;
+}
+
+/* 容器布局 */
+.container {
+	display: flex;
+	width: 100%;
+	height: 100vh;
+	padding: 10px;
+	box-sizing: border-box;
+	gap: 10px;
+}
+
+/* 左侧面板样式 */
+.left-panel {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	min-width: 400px;
+}
+
+/* 确保图表容器内的canvas正确显示 */
+.chart-container canvas {
+	width: 100% !important;
+	height: 100% !important;
+}

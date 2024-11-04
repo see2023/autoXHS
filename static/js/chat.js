@@ -83,10 +83,8 @@ const Chat = {
 		console.log('Parsing message content:', content);
 		if (typeof content === 'object') {
 			if (content.note_id && content.summary && content.xsec_token) {
-				// #title 可以为空
-				const note_title = content.title || '空标题';
-
 				// 处理笔记摘要
+				const note_title = content.title || '空标题';
 				contentDiv.innerHTML = `
 					<div class="note-summary">
 						<h3 class="note-title" style="cursor: pointer;" 
@@ -101,6 +99,18 @@ const Chat = {
 								查看详情
 							</button>
 						</div>
+					</div>
+				`;
+			} else if (content.type === 'stats') {
+				// 处理统计信息
+				contentDiv.innerHTML = `
+					<div class="stats-summary">
+						<h4>搜索统计</h4>
+						<ul>
+							<li>处理关键词：${content.data.keywords_processed} 个</li>
+							<li>分析笔记：${content.data.total_notes} 篇</li>
+							<li>收集评论：${content.data.total_comments} 条</li>
+						</ul>
 					</div>
 				`;
 			} else if (content.text) {
@@ -124,34 +134,29 @@ const Chat = {
 		}
 	},
 
-	// 修改 addMessage 方法，增加直接处理 HTML 的逻辑
-	addMessage(type, content, isHTML = false) {
-		const chatHistory = document.getElementById('chatHistory');
+	// 添加消息
+	addMessage(role, content, isHtml = false) {
 		const messageDiv = document.createElement('div');
-		messageDiv.className = `message ${type}-message`;
+		messageDiv.className = `message ${role}-message`;
 
-		let contentDiv = document.createElement('div');
+		const contentDiv = document.createElement('div');
 		contentDiv.className = 'message-content';
 
-		try {
-			if (isHTML) {
-				// 如果是 HTML 内容，直接设置
-				contentDiv.innerHTML = content;
-			} else {
-				// 否则使用 parseMessageContent 处理
-				this.parseMessageContent(content, contentDiv);
-			}
-		} catch (error) {
-			console.error('Error processing message:', error);
-			contentDiv.innerHTML = `<div class="error-message">消息处理出错: ${error.message}</div>`;
+		if (isHtml) {
+			// 如果是 HTML 内容，直接设置
+			contentDiv.innerHTML = content;
+		} else {
+			// 处理普通文本或对象消息
+			this.parseMessageContent(content, contentDiv);
 		}
 
 		messageDiv.appendChild(contentDiv);
+		const chatHistory = document.getElementById('chatHistory');
 		chatHistory.appendChild(messageDiv);
 		this.scrollToBottom();
 	},
 
-	// 修改 appendToLastAiMessage 方法，实现正确的追加功能
+	// 追加到最后一条 AI 消息
 	appendToLastAiMessage(content, shouldMerge = false) {
 		console.log('Appending to last AI message:', { content, shouldMerge });
 
@@ -160,17 +165,22 @@ const Chat = {
 
 		if (shouldMerge && lastMessage) {
 			const contentDiv = lastMessage.querySelector('.message-content');
-			if (typeof content === 'string') {
-				// 如果是字符串，解析为 markdown 并追加
-				contentDiv.innerHTML += this.safeMarkdownParse(content);
-			} else if (content.html) {
-				// 如果包含 HTML，直接追加
-				contentDiv.innerHTML += content.html;
-			} else {
-				// 其他情况，创建新的消息
-				this.addMessage('ai', content);
+			if (contentDiv) {
+				if (typeof content === 'object' && content.type === 'stats') {
+					// 统计信息创建新消息
+					this.addMessage('ai', content);
+				} else if (typeof content === 'string') {
+					// 如果是字符串，解析为 markdown 并追加
+					contentDiv.innerHTML += this.safeMarkdownParse(content);
+				} else {
+					// 其他情况，解析内容并追加
+					const tempDiv = document.createElement('div');
+					this.parseMessageContent(content, tempDiv);
+					contentDiv.innerHTML += tempDiv.innerHTML;
+				}
 			}
 		} else {
+			// 不合并或没有最后消息时，创建新消息
 			this.addMessage('ai', content);
 		}
 
@@ -180,6 +190,7 @@ const Chat = {
 	// 滚动到底部
 	scrollToBottom() {
 		const chatHistory = document.getElementById('chatHistory');
+
 		chatHistory.scrollTop = chatHistory.scrollHeight;
 	},
 

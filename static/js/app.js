@@ -187,7 +187,10 @@ const App = {
 };
 
 // 页面加载完成后初始化应用
-document.addEventListener('DOMContentLoaded', () => App.init());
+document.addEventListener('DOMContentLoaded', () => {
+	App.init();
+	Visualization.init(); // 确保初始化图表
+});
 
 // Add this method to handle note clicks
 async function openNote(noteId, xsecToken) {

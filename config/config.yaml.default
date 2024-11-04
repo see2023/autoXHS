@@ -41,6 +41,7 @@ llm:
   openai_custom_mm_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
   # qwen-vl-plus-0809 qwen-vl-max-0809 Qwen/Qwen2-VL-2B-Instruct-AWQ
   openai_custom_mm_model: "Qwen/Qwen2-VL-2B-Instruct-AWQ" 
+  location: ""
  
 task:
   max_notes_per_batch: 5

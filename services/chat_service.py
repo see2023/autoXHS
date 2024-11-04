@@ -15,7 +15,7 @@ from services.task_manager import TaskManager
 from services.task_executor import TaskExecutor
 from services.browser_service import BrowserService
 from services.task_manager import TaskState, TaskEvent
-
+from tools.time_tools import get_time_and_location
 logger = logging.getLogger(__name__)
 
 class SearchTaskInfo:
@@ -41,6 +41,7 @@ class ChatService:
             role=MessageRole.system,
             content="You are a helpful AI assistant. You aim to provide accurate, helpful, and friendly responses to users' questions. If you're unsure about something, please say so rather than making assumptions."
         )
+        self.system_message.content += get_time_and_location()
         
         self.chat_history: List[Message] = []
         self.max_messages = 10
@@ -153,7 +154,7 @@ class ChatService:
 }}"""
         
             messages = [
-                Message(role=MessageRole.system, content="你是一个专门分析用户意图的AI助手"),
+                self.system_message,
                 Message(role=MessageRole.user, content=analyze_prompt)
             ]
             
@@ -308,18 +309,24 @@ class ChatService:
                     "message": "继续搜索"
                 }
             else:
-                # 如果用户选择查看结果，将任务标记为完成
-                await self.task_manager.update_task_state(
-                    task_id,
-                    TaskState.COMPLETED,
-                    TaskEvent.COMPLETE,
-                    "用户选择查看结果，搜索结束"
-                )
-                return {
-                    "status": "success",
-                    "message": "搜索结束，准备展示结果"
-                }
-                
+                # 如果用户选择查看结果，使用与任务完成相同的流程
+                try:
+                    # 使用 task_executor 的方法进行分析和完成任务
+                    await self.task_executor._analyze_all_opinions(task)  # 先进行分析
+                    await self.task_executor._complete_task(task)  # 然后完成任务
+                    
+                    return {
+                        "status": "success",
+                        "message": "搜索结束，准备展示结果"
+                    }
+                    
+                except Exception as e:
+                    logger.error(f"Error generating search results: {e}")
+                    return {
+                        "status": "error",
+                        "message": f"生成分析结果失败: {str(e)}"
+                    }
+                    
         except Exception as e:
             logger.error(f"Error submitting user input: {e}")
             return {

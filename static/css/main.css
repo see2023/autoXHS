@@ -1,13 +1,14 @@
 body {
 	margin: 0;
-	padding: 20px;
+	padding: 10px;
 	font-family: Arial, sans-serif;
 }
 
 .container {
 	display: flex;
-	gap: 20px;
+	gap: 6px;
 	height: 100vh;
+	padding: 8px;
 }
 
 .left-panel {
@@ -15,33 +16,36 @@ body {
 	display: flex;
 	flex-direction: column;
 	height: 100%;
+	position: relative;
+	z-index: 1;
+	margin-right: 0;
 }
 
 .right-panel {
 	width: 400px;
 	background: #fff;
-	border-radius: 10px;
-	padding: 20px;
+	border-radius: 8px;
+	padding: 15px;
 	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-	display: none;
-	/* 默认隐藏，有结果时显示 */
+	position: relative;
+	z-index: 2;
 }
 
 .visualization-section {
-	margin-bottom: 20px;
+	margin-bottom: 15px;
 }
 
 .chart-container {
 	width: 100%;
 	height: 300px;
-	margin: 10px 0;
+	margin: 8px 0;
 }
 
 .summary-text {
-	padding: 15px;
+	padding: 12px;
 	background: #f8f9fa;
 	border-radius: 8px;
-	margin-bottom: 20px;
+	margin-bottom: 15px;
 	font-size: 14px;
 	line-height: 1.6;
 }
@@ -53,17 +57,19 @@ body {
 
 .controls-bottom {
 	display: flex;
-	gap: 6px;
-	padding: 15px;
+	gap: 4px;
+	padding: 8px;
 	background: #f8f9fa;
-	border-radius: 12px;
+	border-radius: 8px;
 	position: sticky;
 	bottom: 0;
 	box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+	z-index: 1;
+	margin-top: 6px;
 }
 
 .control-button {
-	padding: 10px 12px;
+	padding: 8px 10px;
 	background: #1a73e8;
 	color: white;
 	border: none;
@@ -76,7 +82,7 @@ body {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	min-width: 60px;
+	min-width: 50px;
 }
 
 .control-button:hover {
@@ -92,12 +98,12 @@ body {
 
 .search-input {
 	flex: 4;
-	padding: 12px;
+	padding: 6px;
 	border: 1px solid #e0e0e0;
 	border-radius: 8px;
 	min-width: 200px;
 	resize: none;
-	min-height: 42px;
+	min-height: 32px;
 	max-height: 150px;
 	overflow-y: auto;
 	font-size: 14px;
