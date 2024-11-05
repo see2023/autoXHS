@@ -87,17 +87,9 @@ const Chat = {
 				const note_title = content.title || '空标题';
 				contentDiv.innerHTML = `
 					<div class="note-summary">
-						<h3 class="note-title" style="cursor: pointer;" 
+						<div class="note-content" style="cursor: pointer;" 
 							onclick="openNote('${content.note_id}', '${content.xsec_token}')">
-							${note_title}
-						</h3>
-						<div class="note-content">
 							${this.safeMarkdownParse(content.summary)}
-						</div>
-						<div class="note-actions">
-							<button onclick="openNote('${content.note_id}', '${content.xsec_token}')">
-								查看详情
-							</button>
 						</div>
 					</div>
 				`;

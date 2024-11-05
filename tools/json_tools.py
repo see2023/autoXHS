@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -39,3 +40,8 @@ def extract_json_from_text(text: str) -> dict:
     except Exception as e:
         logger.error(f"Error extracting JSON from text: {e}, text: {text}")
         return None 
+
+# 从字符串提取第一个数字  "综合可信度 50 左右， 返回 50"
+def extract_first_number(text: str) -> int:
+    match = re.search(r'\d+', text)
+    return int(match.group()) if match else 0

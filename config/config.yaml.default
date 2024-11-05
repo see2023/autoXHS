@@ -32,6 +32,7 @@ logging:
     httpcore: "INFO"
 
 llm:
+  support_json_mode: true
   #model: chagpt: chatgpt-4o-latest gpt-4o-mini;  qwen: qwen-plus-latest qwen-plus-0919; qwen_local: Qwen/Qwen2.5-7B-Instruct  Qwen/Qwen2.5-14B-Instruct-AWQ
   model: "qwen-plus-0919" 
   openai_custom_key_envname: "DASHSCOPE_API_KEY"  #"OPENAI_API_KEY", "DASHSCOPE_API_KEY"

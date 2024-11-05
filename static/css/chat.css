@@ -41,6 +41,10 @@
 	overflow-wrap: break-word;
 }
 
+.message-content p {
+	margin: 4px 0;
+}
+
 .search-interaction {
 	background: #f8f9fa;
 	padding: 12px;
@@ -175,33 +179,11 @@
 	background-color: #f8f9fa;
 }
 
-.note-title {
-	color: #1a73e8;
-	margin-bottom: 10px;
-}
-
-.note-title:hover {
-	text-decoration: underline;
-}
-
 .note-content {
 	margin: 10px 0;
 }
 
-.note-actions {
-	margin-top: 10px;
-	text-align: right;
-}
-
-.note-actions button {
-	background-color: #1a73e8;
-	color: white;
-	border: none;
-	padding: 5px 15px;
-	border-radius: 4px;
-	cursor: pointer;
-}
-
-.note-actions button:hover {
-	background-color: #1557b0;
+.note-content:hover {
+	text-decoration: underline;
+	color: #1a73e8;
 }

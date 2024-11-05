@@ -42,13 +42,26 @@ class AIService:
                         break
         return messages
 
-    async def generate_response(self, messages: List[Message], model: str = "Qwen/Qwen2-VL-2B-Instruct-AWQ") -> str:
+    async def generate_response(self, messages: List[Message], model: str = None, json_mode: bool = False) -> str:
+        """Generate response from AI model
+        
+        Args:
+            messages: List of messages
+            model: Model name
+            json_mode: Whether to force JSON output format
+        """
         messages = self._process_messages(messages)
         try:
-            response = await self._client.chat.completions.create(
-                model=model,
-                messages=[message.to_dict() for message in messages],
-            )
+            kwargs = {
+                "model": model,
+                "messages": [message.to_dict() for message in messages],
+            }
+            
+            # Add response_format if json_mode is enabled and supported
+            if json_mode and config.llm.get('support_json_mode', False):
+                kwargs["response_format"] = {"type": "json_object"}
+                
+            response = await self._client.chat.completions.create(**kwargs)
             
             logging.debug(f"Token usage - Input: {response.usage.prompt_tokens}, "
                          f"Output: {response.usage.completion_tokens}, "

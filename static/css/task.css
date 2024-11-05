@@ -114,11 +114,16 @@
 
 .chart-container {
 	width: 100% !important;
-	height: 300px !important;
-	margin: 15px 0;
+	height: 350px !important;
+	margin: 12px 0;
 	background: white;
 	border-radius: 8px;
 	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* 为争议分析图添加特殊样式 */
+#controversyAnalysis {
+	height: 400px !important;
 }
 
 /* 右侧面板样式 */
@@ -172,17 +177,19 @@
 }
 
 .visualization-section {
-	margin-bottom: 20px;
+	margin-bottom: 15px;
 	background: white;
 	border-radius: 8px;
 	padding: 12px;
 	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
+/* 添加图表标题样式 */
 .visualization-section h3 {
-	margin: 0 0 15px 0;
+	margin: 0 0 12px 0;
 	color: #333;
-	font-size: 18px;
+	font-size: 16px;
+	font-weight: 500;
 }
 
 /* 容器布局 */

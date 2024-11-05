@@ -8,7 +8,7 @@ from models.ai_models import Message, MessageRole
 from config.config_manager import config
 import json
 import re
-from tools.json_tools import extract_json_from_text
+from tools.json_tools import extract_json_from_text, extract_first_number
 
 logger = logging.getLogger(__name__)
 
@@ -225,7 +225,7 @@ Output example: 遛狗技巧,狗狗训练,遛狗装备,遛狗注意事项"""
                         comments
                     )
                     
-                    if opinions:
+                    if opinions and isinstance(opinions, dict): 
                         # 添加当前关键词信息
                         opinions["search_keyword"] = keyword
                         
@@ -242,32 +242,63 @@ Output example: 遛狗技巧,狗狗训练,遛狗装备,遛狗注意事项"""
                             task.context["all_opinions"] = []
                         task.context["all_opinions"].append(opinions)
                         
-                        # 生成并发送单篇笔记的摘要
-                        note_summary = (
-                            f"### {note_title}\n\n"
-                            f"**主要观点**：{opinions['main_opinion']['content']}\n\n"
-                            f"**可信度**：{opinions['main_opinion']['confidence']}/100\n\n"
-                            f"**支持观点**：\n" + "\n".join([
-                                f"- {op['content']} (点赞：{op['metrics']['likes']})"
-                                for op in opinions['supporting_opinions'][:3]  # 最多显示3个支持观点
-                            ]) + "\n\n"
-                            f"**反对观点**：\n" + "\n".join([
-                                f"- {op['content']} (点赞：{op['metrics']['likes']})"
-                                for op in opinions['opposing_opinions'][:3]  # 最多显示3个反对观点
-                            ])
-                        )
-                        
-                        await self.task_manager.websocket_service.send_message(task.client_id, {
-                            "type": "chat_response",
-                            "content": {
-                                "summary": note_summary,
-                                "note_id": note_id,
-                                "xsec_token": note.get("xsec_token"),
-                                "title": note_title
-                            },
-                            "message_type": "task_note_summary"
-                        })
-                        logger.debug(f"Sent note summary message for {note_id} - {note_title}, note_summary: {note_summary}")
+                        try:
+                            main_opinion = opinions.get('main_opinion', {})
+                            supporting_opinions = opinions.get('supporting_opinions', [])
+                            opposing_opinions = opinions.get('opposing_opinions', [])
+                            
+                            # 生成并发送单篇笔记的摘要
+                            note_summary = [f"### {note_title}\n"]
+                            
+                            # 添加主要观点
+                            if isinstance(main_opinion, dict):
+                                note_summary.extend([
+                                    f"**主要观点**：{main_opinion.get('content', '无')}\n",
+                                    f"**可信度**：{main_opinion.get('confidence', 0)}/100\n"
+                                ])
+                            
+                            # 添加支持观点
+                            note_summary.append("\n**支持观点**：")
+                            if isinstance(supporting_opinions, list) and supporting_opinions:
+                                for op in supporting_opinions[:3]:  # 最多显示3个支持观点
+                                    if isinstance(op, dict):
+                                        note_summary.append(
+                                            f"- {op.get('content', '无')} "
+                                            f"(点赞：{op.get('metrics', {}).get('likes', 0)})"
+                                        )
+                            else:
+                                note_summary.append("- 无支持观点")
+                            
+                            # 添加反对观点
+                            note_summary.append("\n**反对观点**：")
+                            if isinstance(opposing_opinions, list) and opposing_opinions:
+                                for op in opposing_opinions[:3]:  # 最多显示3个反对观点
+                                    if isinstance(op, dict):
+                                        note_summary.append(
+                                            f"- {op.get('content', '无')} "
+                                            f"(点赞：{op.get('metrics', {}).get('likes', 0)})"
+                                        )
+                            else:
+                                note_summary.append("- 无反对观点")
+                            
+                            # 将列表转换为字符串
+                            note_summary = "\n".join(note_summary)
+                            
+                            await self.task_manager.websocket_service.send_message(task.client_id, {
+                                "type": "chat_response",
+                                "content": {
+                                    "summary": note_summary,
+                                    "note_id": note_id,
+                                    "xsec_token": note.get("xsec_token"),
+                                    "title": note_title
+                                },
+                                "message_type": "task_note_summary"
+                            })
+                            logger.debug(f"Sent note summary message for {note_id} - {note_title}")
+                            
+                        except Exception as e:
+                            logger.error(f"Error generating note summary: {e}")
+                            continue
                     
                     # 保存原始数据
                     task.results.append({
@@ -443,7 +474,7 @@ Output example: 遛狗技巧,狗狗训练,遛狗装备,遛狗注意事项"""
             ]
             
             logger.debug(f"start analyze_note_opinions: {note_content['title']}")
-            response = await self.ai_service.generate_response(messages, model=config.llm.get('model'))
+            response = await self.ai_service.generate_response(messages, model=config.llm.get('model'), json_mode=config.llm.get('support_json_mode'))
             # 使用 extract_json_from_text 处理 AI 返回的文本
             analysis_result = extract_json_from_text(response)
             if not analysis_result:
@@ -498,7 +529,23 @@ Output example: 遛狗技巧,狗狗训练,遛狗装备,遛狗注意事项"""
         try:
             all_opinions = task.context.get("all_opinions", [])
             if not all_opinions or len(all_opinions) == 0:
-                logger.warning("No opinions found in task context, skip _analyze_all_opinions")
+                logger.warning("No opinions found in task context")
+                # 创建基础分析结果，包含统计数据
+                basic_analysis = {
+                    "stats": {
+                        "total_notes": task.progress.notes_processed,
+                        "total_comments": task.progress.comments_processed,
+                        "total_keywords": task.progress.keywords_completed
+                    },
+                    "trending_opinions": [],
+                    "controversial_points": [],
+                    "time_based_analysis": {
+                        "opinion_shifts": [],
+                        "emerging_topics": [],
+                        "fading_topics": []
+                    }
+                }
+                task.context["final_analysis"] = basic_analysis
                 return
                 
             prompt = f"""分析以下所有笔记中的观点，考虑每个笔记的影响力和时间因素:
@@ -528,13 +575,6 @@ Output example: 遛狗技巧,狗狗训练,遛狗装备,遛狗注意事项"""
             "discussion_heat": "讨论热度 0-100"
         }}
     ],
-    "minority_opinions": [
-        {{
-            "content": "少数派观点",
-            "reasoning": "观点依据",
-            "credibility": "可信度评估 0-100"
-        }}
-    ],
     "time_based_analysis": {{
         "opinion_shifts": ["观点变化趋势"],
         "emerging_topics": ["新兴话题"],
@@ -543,17 +583,25 @@ Output example: 遛狗技巧,狗狗训练,遛狗装备,遛狗注意事项"""
 }}"""
 
             messages = [
-                Message(role=MessageRole.system, content="你是一个专业的观点分析专家，善于归纳总结和分析观点趋势。"),
+                Message(role=MessageRole.system, 
+                       content="你是一个专业的观点分析专家。请严格按照指定的JSON格式输出，不要添加任何其他文字。"),
                 Message(role=MessageRole.user, content=prompt)
             ]
             
             logger.debug(f"start analyze_all_opinions")
-            summary = await self.ai_service.generate_response(messages, model=config.llm.get('model'))
+            summary = await self.ai_service.generate_response(messages, model=config.llm.get('model'), json_mode=config.llm.get('support_json_mode'))
             # 使用 extract_json_from_text 处理 AI 返回的文本
             analysis_result = extract_json_from_text(summary)
             if not analysis_result:
-                logger.warning(f"Failed to extract JSON from AI response: {summary}")
+                logger.warning(f"Failed to get valid JSON from response")
                 return "观点综合分析失败"
+            
+            # 添加统计数据
+            analysis_result["stats"] = {
+                "total_notes": task.progress.notes_processed,
+                "total_comments": task.progress.comments_processed,
+                "total_keywords": task.progress.keywords_completed
+            }
             
             # 保存综合分析结果
             task.context["final_analysis"] = analysis_result
@@ -606,14 +654,15 @@ Output example: 遛狗技巧,狗狗训练,遛狗装备,遛狗注意事项"""
                 messages, 
                 model=config.llm.get('model')
             )
+            logger.debug(f"text_summary: {text_summary}")
             
-            # 构建完整的返回数据
+            # 使用实际的统计数据
+            stats = analysis_result.get("stats", {})
             return {
                 "basic_stats": {
-                    "keywords_processed": len(analysis_result.get("trending_opinions", [])),
-                    "total_notes": sum(len(op.get("sources", [])) 
-                                     for op in analysis_result.get("trending_opinions", [])),
-                    "total_comments": analysis_result.get("total_comments", 0)
+                    "keywords_processed": stats.get("total_keywords", 0),
+                    "total_notes": stats.get("total_notes", 0),
+                    "total_comments": stats.get("total_comments", 0)
                 },
                 "text_summary": text_summary,
                 "visualization_data": {
@@ -621,32 +670,51 @@ Output example: 遛狗技巧,狗狗训练,遛狗装备,遛狗注意事项"""
                         "title": "关键词权重分布",
                         "data": [
                             {"text": keyword, "weight": confidence}
-                            for opinion in analysis_result["trending_opinions"]
+                            for opinion in analysis_result.get("trending_opinions", [])
                             for keyword, confidence in zip(
-                                opinion["keywords"], 
-                                [opinion["confidence"]] * len(opinion["keywords"])
+                                opinion.get("keywords", []), 
+                                [extract_first_number(opinion.get("confidence", "0"))] * len(opinion.get("keywords", []))
                             )
                         ]
                     },
                     "opinion_distribution": {
-                        "title": "观点分布",
-                        "type": "pie",
+                        "title": "主要观点分布",
                         "data": [
                             {
-                                "name": opinion["content"][:20] + "...",
-                                "value": opinion["support_level"],
-                                "confidence": opinion["confidence"]
+                                "content": opinion.get("content", ""),  # 完整观点内容
+                                "support_level": extract_first_number(opinion.get("support_level", "0")),  # 支持度
+                                "confidence": extract_first_number(opinion.get("confidence", "0")),  # 可信度
+                                "influence_score": extract_first_number(opinion.get("influence_score", "0"))  # 影响力
                             }
-                            for opinion in analysis_result["trending_opinions"]
+                            for opinion in analysis_result.get("trending_opinions", [])
+                        ]
+                    },
+                    "controversy_analysis": {
+                        "title": "主要争议点",
+                        "data": [
+                            {
+                                "topic": point.get("topic", ""),  # 争议主题
+                                "support_ratio": extract_first_number(point.get("support_ratio", "0")),  # 支持比例
+                                "discussion_heat": extract_first_number(point.get("discussion_heat", "0")),  # 讨论热度
+                                "supporting_view": point.get("supporting_view", ""),  # 支持方观点
+                                "opposing_view": point.get("opposing_view", "")  # 反对方观点
+                            }
+                            for point in analysis_result.get("controversial_points", [])
                         ]
                     }
-                    # 其他图表数据...
                 }
             }
                 
         except Exception as e:
             logger.error(f"Error generating visualization data: {e}")
+            # 出错时返回基础统计数据
+            stats = analysis_result.get("stats", {})
             return {
+                "basic_stats": {
+                    "keywords_processed": stats.get("total_keywords", 0),
+                    "total_notes": stats.get("total_notes", 0),
+                    "total_comments": stats.get("total_comments", 0)
+                },
                 "text_summary": "无法生成分析总结",
                 "error": str(e)
             }
